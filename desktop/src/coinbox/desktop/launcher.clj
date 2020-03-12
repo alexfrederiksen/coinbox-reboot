@@ -1,9 +1,15 @@
 (ns coinbox.desktop.launcher
   (:require [coinbox.core :refer :all])
-  (:import [com.badlogic.gdx.backends.lwjgl LwjglApplication]
+  (:import [com.badlogic.gdx.backends.lwjgl LwjglApplication LwjglApplicationConfiguration]
            [org.lwjgl.input Keyboard])
   (:gen-class))
 
+
 (defn -main []
-  (LwjglApplication. (coinbox.core.Game.) "demo" 800 600)
-  (Keyboard/enableRepeatEvents true))
+  (let [config (LwjglApplicationConfiguration.)]
+    ;; to stop Gdx from returning -1 on close
+    (set! (.forceExit config) false)
+    (set! (.title config) "Coinbox Hero Rebooted")
+
+    (LwjglApplication. (coinbox.core.Game.) config)
+    (Keyboard/enableRepeatEvents true)))
