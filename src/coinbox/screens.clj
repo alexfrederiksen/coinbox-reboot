@@ -1,7 +1,8 @@
 (ns coinbox.screens
   (:require [coinbox.gamestate :as gamestate :refer [resources]]
             [coinbox.player :as player]
-            [coinbox.utils :as utils])
+            [coinbox.utils :as utils]
+            [coinbox.box :as box])
   (:import [com.badlogic.gdx Game Gdx Input Input$Keys Graphics Screen]
            [com.badlogic.gdx.graphics Color GL20]
            [com.badlogic.gdx.graphics.g2d SpriteBatch BitmapFont]
@@ -21,14 +22,16 @@
   (reduce (fn [lstate k] 
             (let [new-ks (conj (vec ks) k)
                   obj (get-in lstate new-ks)]
-              (-> (if (satisfies? gamestate/Actor obj)
+              (-> (if (record? obj)
 
-                    ;; update actor
+                    ;; update as actor
                     (as-> obj $
                       (gamestate/act $ lstate)
                       (if (nil? $)
                         (update-in lstate ks #(dissoc % k))
-                        (assoc-in lstate new-ks $)))
+                        (assoc-in lstate new-ks $))
+                      ;; allow actor to update the game state
+                      (gamestate/act-globally obj $))
 
                     ;; otherwise recurse this structure
                     (if (associative? obj) 
@@ -46,7 +49,8 @@
     (proxy [Screen] []
       ;;; on switch to this screen
       (show []
-        (reset! gamestate/state {:actors {:player (player/player)}})
+        (reset! gamestate/state {:actors {:player (player/player)
+                                          :box (box/box 500 150)}})
         ;; setup stage
         (reset! stage (Stage.))
         ;; setup sprite batch

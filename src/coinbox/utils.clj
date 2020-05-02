@@ -1,6 +1,8 @@
 (ns coinbox.utils
   (:refer-clojure :exclude [keys]))
 
+;; ### Old functions for mixing maps and vectors ###############################
+
 (defprotocol Keyable
   (keys [this]))
 
@@ -29,30 +31,63 @@
                     (f this) 
                     (doseq [k (keys this)] (do-in (k this) f)))))
 
-(defn grow
-  "Adds a value to each collections, and starts one if emtpy"
-  [colls v]
-  (if (empty? colls)
-    (list (list v))
-    (map #(conj % v) colls)))
-
-(defn keys-in
-  "Recursively find all key sequences"
-  ([m]
-  (if (associative? m)
-    (->> (map (fn [k] 
-                ;; for each key, grow a path
-                (grow (keys-in (get m k)) k)) 
-           (keys m))
-         (apply concat))
-    (list)))
-  ([m & ks]
-   (as-> (keys-in (get-in m ks)) $
-         (reduce grow $ (reverse ks)))))
-
-;; (keys-in {:actors {:p1 0 :p2 1 :p3 [0 1 2 3]} :nopes 2})
+;; ### Quality of life functions ###############################################
 
 (defn map-kv
   "Maps a function over the values of a map"
   [m f]
   (reduce-kv (fn [m k v] (assoc m k (f v))) m m))
+
+(defn reset-color
+  "Resets the batch to the default white color"
+  [batch]
+  (.setColor batch 
+             (float 1) (float 1) 
+             (float 1) (float 1)))
+
+
+
+;; ### Map->vector inverting ###################################################
+
+(defn conj-mapvec
+  [m e c]
+  (update m c #(conj % e)))
+
+(defn conj-mapvec*
+  [m e cs]
+  (reduce (fn [m c]
+            (conj-mapvec m e c)) m cs))
+
+(defn blank-vals
+  [m]
+  (zipmap (apply concat (vals m)) (repeat [])))
+
+(defn invert-mapvec
+  "Reverse a mapping A -> [B] to mapping B -> [A]"
+  [m]
+  (reduce-kv conj-mapvec*
+             (blank-vals m) m))
+
+
+;; ### Injections! #############################################################
+
+(defn inject
+  "Injects a key into parameter"
+  [m f base-keys inj-keys inj-name & args]
+
+  ;; build injected map
+  (let [injected (-> (get-in m base-keys)
+                     (assoc inj-name (get-in m inj-keys)))
+
+        ;; apply function
+        out (apply f injected args)
+
+        ;; parse altered output
+        out-inj (get out inj-name)
+        out-base (dissoc out inj-name)]
+
+    ;; update original structure
+    (-> m
+        (assoc-in base-keys out-base)
+        (assoc-in inj-keys out-inj))))
+

@@ -65,8 +65,11 @@
 
 (def resource-names
   {:polka "polka-stand-0.png"
+   :polka-jump "polka-jump.png"
    :polka-walk (->AnimationLoader "polka-walk.png")
-   :coin (->AnimationLoader "coin.png")})
+   :coin (->AnimationLoader "coin.png")
+   :box "coinbox.png"
+   :box-spook "coinbox-spook.png"})
 
 
 (defn load-resources
