@@ -2,7 +2,8 @@
   (:require [coinbox.gamestate :as gamestate :refer [resources]]
             [coinbox.player :as player]
             [coinbox.utils :as utils]
-            [coinbox.box :as box])
+            [coinbox.box :as box]
+            [coinbox.logic :as logic])
   (:import [com.badlogic.gdx Game Gdx Input Input$Keys Graphics Screen]
            [com.badlogic.gdx.graphics Color GL20]
            [com.badlogic.gdx.graphics.g2d SpriteBatch BitmapFont]
@@ -16,45 +17,21 @@
   (.postRunnable (Gdx/app)
                 #(.setScreen @gamestate/game s)))
 
-(defn update-actors
-  "Recursively updates all actors in any nested structure"
-  [state ks]
-  (reduce (fn [lstate k] 
-            (let [new-ks (conj (vec ks) k)
-                  obj (get-in lstate new-ks)]
-              (-> (if (record? obj)
-
-                    ;; update as actor
-                    (as-> obj $
-                      (gamestate/act $ lstate)
-                      (if (nil? $)
-                        (update-in lstate ks #(dissoc % k))
-                        (assoc-in lstate new-ks $))
-                      ;; allow actor to update the game state
-                      (gamestate/act-globally obj $))
-
-                    ;; otherwise recurse this structure
-                    (if (associative? obj) 
-                      (update-actors lstate new-ks)
-                      lstate))))) 
-
-          ;; feed state
-          state 
-          ;; feed keys
-          (-> (get-in state ks) (utils/keys))))
-
 (def main
   (let [stage (atom nil)
         batch (atom nil)]
     (proxy [Screen] []
       ;;; on switch to this screen
       (show []
-        (reset! gamestate/state {:actors {:player (player/player)
-                                          :box (box/box 500 150)}})
         ;; setup stage
         (reset! stage (Stage.))
         ;; setup sprite batch
         (reset! batch (SpriteBatch.))
+
+        ;; init logical state
+        (reset! gamestate/state (-> (logic/init)
+                                    (logic/attach-batch @batch)))
+
         ;; add label
         (let [style (Label$LabelStyle. (BitmapFont.) (Color. 1 1 1 1))
               label (Label. "MAIN SCREEN" style)]
@@ -64,8 +41,8 @@
       (render [delta]
 
         ;; clear the screen with black
-        (.glClearColor (Gdx/gl) 0 0 0 0)
-        (.glClear (Gdx/gl) GL20/GL_COLOR_BUFFER_BIT)
+        (.glClearColor Gdx/gl 0 0 0 0)
+        (.glClear Gdx/gl GL20/GL_COLOR_BUFFER_BIT)
 
         (when (.isKeyJustPressed Gdx/input Input$Keys/P)
           ;; pause screen
@@ -74,23 +51,15 @@
           ;; reload resources
           (gamestate/load-resources))
 
-        ;; update game
-        (as-> @gamestate/state state
-
-          ;; update delta time
-          (assoc state :deltatime delta)
-
-          ;; update actors
-          (update-actors state [:actors])
-
-          ;; update gamestate
-          (reset! gamestate/state state))
-
         ;; start rendering
         (.begin @batch)
 
-        ;; draw actors
-        (utils/do-in (:actors @gamestate/state) #(gamestate/draw % @gamestate/state @batch))
+        ;; update / render game
+        (as-> @gamestate/state state
+          ;; tick logic
+          (logic/tick state)
+          ;; update gamestate
+          (reset! gamestate/state state))
 
         ;; end rendering
         (.end @batch)

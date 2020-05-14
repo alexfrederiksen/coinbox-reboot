@@ -9,6 +9,7 @@
            [com.badlogic.gdx.graphics Texture]
            [com.badlogic.gdx Gdx Input$Keys]))
 
+
 (defn move-axis
   "Move w.r.t object's speed and delta time"
   [this game k f]
@@ -143,4 +144,7 @@
 
 
 
+
+(defn player []
+  {:sprite {}})
 

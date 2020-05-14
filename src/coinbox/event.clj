@@ -3,10 +3,9 @@
 (defn event [] {:subscribers {} :i 0})
 
 (defn invoke
-  [event & args]
-  (-> (map #(apply % args) (-> (:subscribers event)
-                               (vals)))
-      (doall)))
+  [event state & args]
+  (reduce (fn [state f] (apply f state args)) state (-> (:subscribers event) 
+                                                        (vals))))
 
 (defn subscribe*
   ([event callback]
@@ -21,7 +20,7 @@
 
 (defn subscribe
   [event callback]
-  (let [[e id] (subscribe callback)]
+  (let [[e id] (subscribe* event callback)]
     e))
 
 (defn unsubscribe

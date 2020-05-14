@@ -1,6 +1,7 @@
 (ns coinbox.input
   (:require [coinbox.system :as sys]
-            [coinbox.event :refer [event invoke]])
+            [coinbox.event :refer [event invoke]]
+            [coinbox.lens :as l])
   (:import [com.badlogic.gdx Gdx Input$Keys]))
 
 (def key->GdxKey {:a Input$Keys/A
@@ -43,40 +44,40 @@
   [k]
   (.isKeyPressed Gdx/input (key->GdxKey k)))
 
-
 (defn listen-key
   "Invoke event if key is pressed"
-  [e k event-name]
-  (when (key-down k) 
-    (let [target (get e (:target e))]
-      ;; check wether target component is actually there
-      (when (nil? target) 
-        (throw (str "Component \"" (:target e) "\" not found in entity")))
-
-      (let [event (target event-name)]
-        (invoke event)))))
+  [entity k event-name state]
+  (if (key-down k) 
+    ;; then
+    (let [target (sys/find-component entity (-> entity :inputlistener :target))
+          event (target event-name)]
+      (invoke event state))
+    ;; else
+    state))
 
 (defn listen-entity
   "Invoke events for entity"
-  [entity]
-  (apply map (fn [[k v]] listen-key entity k v) 
-         (:keys entity)))
-
+  [entity state]
+  (reduce (fn [state [k event]] (listen-key entity k event state)) 
+          state
+          (-> entity :inputlistener :keys)))
 
 (defrecord InputSystem
   [ids]
   sys/System
 
-  (hookup [this events] events)
-  (enroll [this entities-by-component] 
-    (assoc this :ids 
-           (sys/filter-elgible entities-by-component prereqs)))
+  (hookup [this this-key state] state)
+  (enroll [this this-key state entities-by-component] 
+    (l/with-zoom state {:this :arg} [this-key]
+      (l/assoc-in state [:this :ids] (sys/filter-elgible entities-by-component prereqs))))
 
-  (tick [this state events]
-    ;; listen for entities
-    (-> (map listen-entity (vals (select-keys state ids)))
-        (doall))
-    state))
+  (tick [this this-key state]
+    (l/with-zoom state {:this :arg} [this-key]
+      ;; listen for entities
+      (reduce (fn [state entity] (listen-entity entity state)) 
+              state (-> (:entities state) 
+                        (select-keys ids) 
+                        (vals))) )))
 
 (defn input-system
   [] (InputSystem. []))
