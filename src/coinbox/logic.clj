@@ -1,73 +1,75 @@
 (ns coinbox.logic
   (:require [clojure.pprint :refer [pprint]] 
-            [coinbox.event :as event :refer [event]]
-            [coinbox.input :refer [input-system]]
-            [coinbox.render :as render :refer [render-system]]
-            [coinbox.system :as sys]
-            [coinbox.utils :as utils]))
+            [coinbox.utils :as utils]
+            [coinbox.player :as player]
+            [coinbox.gamestate :as gs]
+            [clojure.algo.monads :as m]))
 
-(defn hello
-  [state]
-  (println "HELLOW THERE WHAT IS UP MY DUDE")
-  (update-in state [:entities 0 :pos :x] inc))
+;; Some helper functions #######################################################
 
-(defn testplayer [] {:pos {:x 20 :y 0}
-                     :size {:w 100 :h 100}
-                     :sprite {:texture :polka}
-                     :controller {:move-left (event/subscribe (event) hello)}
-                     :inputlistener {:target :controller
-                                     :keys {:a :move-left}}})
+(m/defmonadfn m-bind*
+  "Binds a monadic value to another monadic value, ignoring m1's underlying 
+   value.
+   m-bind* :: m a -> m b -> m b"
+  [m1 m2]
+  (m/m-bind m1 (fn [_] m2)))
+
+(m/defmonadfn m-map*
+  "Essentially mapcat monadic values, ignoring underlying values. Useful
+   for composing monadic State values.
+   m-map* :: [m a] -> m ()"
+  [f coll]
+  (reduce m-bind* (map f coll) ))
+
+(defn ids [m]
+  "Sequence of indices for m"
+  (range (count m)))
+
+;; Game initialization #########################################################
+
+(defn init-state 
+  "Initializes the gamestate
+   init-state :: State GameState ()"
+  []
+  (m/domonad m/state-m 
+             [
+              ;; initalize player
+              _ (player/init)
+
+             ] 
+             ;; don't care to return anything useful
+             nil))
 
 
-(defn init-events [] {:collide (event)
-                      :keydown (event)})
+;; Game logic ##################################################################
 
-(defn init-systems [] {:input (input-system)
-                       :render (render-system)})
-
-(defn init-entities [] [(testplayer)])
-
-
-
-
-
-(defn to-map
-  "Index vector with its positional indices"
-  [v]
-  (zipmap (range) v))
-
-(defn init-state [] {:events (init-events)
-                     :systems (init-systems)
-                     :entities (to-map (init-entities))})
-
-(defn call-each
-  "Threads state through each value in substate with f
-  and passes (obj-value obj-key state & args] to f"
-  [state f substate-key & args]
-  (reduce-kv (fn [state k v] (apply f v [substate-key k] state args)) 
-             state (get state substate-key)))
-
-(defn setup
-  [state]
-  (println "Setting up..")
-  ;; precompute entity lookup by components
-  (let [entities-by-component (sys/by-component (:entities state))]
-    (as-> state state
-        ;; hookup each system to events
-        (call-each state sys/hookup :systems)
-        ;; enroll entities to each system
-        (call-each state sys/enroll :systems entities-by-component))))
+;; (defn player-collide-coins
+;;   "Perform player-coin collisions and return true if any happen
+;;    player-collide-coins :: State GameState Bool"
+;;   []
+;;   (m/domonad m/state-m
+;;              [
+;;               ;; get the coins
+;;               coins (get-coins)
+;;               ;; and attempt to pickup each
+;;               _     (m-map* pickup (ids coins))
+;;              ]))
+;; 
 
 (defn tick
-  [state]
-  ;; tick each system to update entities
-  (call-each state sys/tick :systems))
+  "Ticks the game
+   tick :: State GameState ()"
+  [delta]
+  (m/domonad m/state-m
+             [
+              ;; get delta time 
+              _ (gs/put :delta-time delta)
+              ;; tick the player
+              _ (player/tick)
+             ] 
+             nil))
 
-(defn init
-  []
-  (setup (init-state)))
+;; Testing stuff (shall be removed) ############################################
 
-(defn attach-batch
-  [state batch]
-  (update-in state [:systems :render] render/attach-batch batch))
+((init-state) {})
 

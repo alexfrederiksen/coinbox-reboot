@@ -5,26 +5,7 @@
   (:import [com.badlogic.gdx.graphics Texture]
            [com.badlogic.gdx Gdx]))
 
-;; define an actor for our game objects
-(defprotocol Actor
-  (act [this game])
-  (act-globally [this game])
-  (draw [this game batch]))
-
-(extend-type java.lang.Object
-  Actor
-  (act [this game]
-    (-> (str "Acting not implemented for " (type this))
-        (Exception.)
-        (throw)))
-  (act-globally [this game]
-    (-> (str "Acting globally not implemented for " (type this))
-        (Exception.)
-        (throw)))
-  (draw [this game batch]
-    (-> (str "Drawing not implemented for " (type this))
-        (Exception.)
-        (throw))))
+;; Data ########################################################################
 
 ;; the game state (e.g. objects, cameras, etc.)
 (defonce state (atom nil))
@@ -35,6 +16,42 @@
 ;; textures and sounds
 (defonce resources (atom nil))
 
+;; Monadic state ###############################################################
+
+(defn fetch
+  [k]
+  (fn [s] [(get s k) s]))
+
+(defn put
+  [k v]
+  (fn [s] [s (assoc s k v)]))
+
+(defn mutate
+  [k f & args]
+  (fn [s] [s (apply update s k f args)]))
+
+(defn fetch-one
+  [k index]
+  (fn [s] [(get-in s (list k index)) s]))
+
+(defn put-one
+  [k index v]
+  (fn [s] [s (assoc-in s (list k index) v)]))
+
+(defn mutate-one
+  [k index f]
+  (fn [s] [s (update-in s (list k index) f)]))
+
+(defmacro defstate
+  "Creates a new state definition"
+  [obj-name ks]
+  `(def ~obj-name ~ks))
+
+(defn defgroupstate
+  [obj-name ks]
+  )
+
+;; Resource management #########################################################
 
 (defn load-tex
   [tname]
@@ -85,5 +102,6 @@
   [form]
   `(.postRunnable (Gdx/app)
                   (fn [] ~form)))
+
 
 

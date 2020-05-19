@@ -1,150 +1,79 @@
 (ns coinbox.player
-  (:require [coinbox.gamestate :as gamestate :refer [resources]]
-            [coinbox.animation :as anim]
-            [coinbox.physics :as physics]
-            [coinbox.coin :as coin]
-            [coinbox.utils :as utils]
-            [coinbox.box :as box])
-  (:import [com.badlogic.gdx.graphics.g2d Animation]
-           [com.badlogic.gdx.graphics Texture]
-           [com.badlogic.gdx Gdx Input$Keys]))
+  (:require [coinbox.gamestate :as gs]
+            [coinbox.vec :as v]
+            [coinbox.spritebatch :as b]
+            [clojure.algo.monads :as m])
+  (:import [com.badlogic.gdx Gdx Input$Keys]))
 
+;; Initialization ##############################################################
 
-(defn move-axis
-  "Move w.r.t object's speed and delta time"
-  [this game k f]
-  (assoc this k (f (k this) (* (:speed this)
-                               (:deltatime game)))))
+(def size 100)
 
-(def jump-velocity 1300)
-(def speed 800)
+(defn init
+  []
+  (gs/put :player {
+                   :vel (vector 0 0)
+                   :pos (vector 0 0)
+                  }))
 
-(def rigid-box {:u1 0.3
-                :v1 0.0
-                :u2 0.7
-                :v2 0.9})
+;; Logic #######################################################################
 
-(defn applym
-  [m f & ks]
-  (apply f (map #(% m) ks)))
+(defn input
+  "Capture input for player"
+  []
+  {:left?  (.isKeyPressed Gdx/input Input$Keys/H)
+   :right? (.isKeyPressed Gdx/input Input$Keys/L)
+   :up?    (.isKeyPressed Gdx/input Input$Keys/K)
+   })
 
-(defn render-box
-  [body]
-  ;; convert rigid normalized to render 
-  (let [unit (/ (:w body) (- (:u2 rigid-box) (:u1 rigid-box)))]
-    {:x (- (:x body) (* (:u1 rigid-box) unit))
-     :y (- (:y body) (* (:v1 rigid-box) unit))
-     :w unit
-     :h unit}))
-
-(defn body
-  [x y size]
-  {:x x
-   :y y
-   :w (* size (- (:u2 rigid-box) (:u1 rigid-box)))
-   :h (* size (- (:v2 rigid-box) (:v1 rigid-box)))})
-
-(defn move-right
+(defn push
+  "Compute velocity by input"
   [this]
-  (-> this
-    (assoc :left? false)
-    (assoc-in [:body :velx] speed)))
+  (let [{:keys [left? right? up?]} (input)]
+    ;; compute
+    (update this :vel 
+            (fn [cur-vel] 
+              (cond->  (v/set-x cur-vel 0)
+                left?  (v/set-x -500) 
+                right? (v/set-x  500) 
+                up?    (v/set-y  900)))) ))
 
-(defn move-left
-  [this]
-  (-> this
-    (assoc :left? true)
-    (assoc-in [:body :velx] (- speed))))
+(def gravity 5100)
 
-(defn jump
-  [this]
-  (if (zero? (-> this :body :y))
-    ;; we're grounded, we can jump
-    (assoc-in this [:body :vely] jump-velocity)
-    ;; otherwise, we should not jump
-    this))
+(defn physics 
+  [this delta]
+  (update this :vel 
+          (fn [vel] (v/add vel (v/scl [0 (- gravity)] delta) ))))
 
-(defn bop-box
-  [game]
-  (box/bop game 0.0 1.0 1600))
-
-(defn pickup-coins
-  [game this]
-  )
+(defn collide
+  [{[x y] :pos :as this}]
+  (cond-> this
+    (< y 0) (-> (update :pos (fn [pos] (v/set-y pos 0)))
+                (update :vel (fn [vel] (v/set-y vel 0))) )))
 
 (defn move
-  [this game]
-  (cond-> this
-    ;; move right
-    (.isKeyPressed Gdx/input Input$Keys/L) (move-right)
-    ;; move left
-    (.isKeyPressed Gdx/input Input$Keys/H) (move-left)
-    ;; jump
-    (.isKeyPressed Gdx/input Input$Keys/SPACE) (jump)
-    ;; kill myself
-    (.isKeyPressed Gdx/input Input$Keys/U) ((constantly nil))))
+  "Move based on velocity"
+  [this delta]
+  (let [vel (get this :vel)
+        pos (get this :pos)]
+    (assoc this :pos 
+           ;; compute new position 
+           (v/add pos (v/scl vel delta)) )))
 
-(defn spawn-coin
-  [game this]
-  (update-in game [:actors :coins] 
-             #(vec (conj % (coin/coin (-> this :body :x) 
-                                      (-> this :body :y))))))
-
-(defn frame
-  [this]
-  (cond
-    (pos? (-> this :body :y)) (:polka-jump @resources)
-    (zero? (-> this :body :velx)) (:polka @resources)
-    :else (anim/frame (:walking this))))
-
-(defrecord Player
-  [body left? walking]
-  gamestate/Actor
-
-  (act [this game] 
-    (some-> this
-        ;; reset velocity
-        (assoc-in [:body :velx] 0)
-        ;; move player
-        (move game)
-        ;; trigger physics
-        (update :body #(physics/move % game))
-        ;; update animation
-        (assoc :walking (anim/run walking (:deltatime game)))))
-
-  (act-globally [this game]
-    ;; do something to the game state
-    (cond-> game
-      ;; spawn a coin
-      (.isKeyJustPressed Gdx/input Input$Keys/W) (spawn-coin this)
-      ;; bop the box
-      (-> this :body :bopped?) (bop-box)))
-
-  (draw [this game batch]
-    ;; draw player
-    (utils/reset-color batch)
-    (let [tex (frame this)
-          b (render-box body)]
-      (.draw batch tex
-             (float (:x b)) 
-             (float (:y b))
-             (float (:w b)) 
-             (float (:h b))
-             (int 0) (int 0)
-             (.getWidth tex)
-             (.getHeight tex)
-             left? false))))
-
-(defn player
+(defn tick
+  "Tick the player
+   tick :: State GameState ()"
   []
-  (let [b (body 100 0 100)]
-    (map->Player {:body (apply physics/body (map b [:x :y :w :h])) 
-                  :left? false
-                  :walking (anim/animation (:polka-walk @resources) 0.2)})))
+  (m/domonad m/state-m
+             [
+              delta (gs/fetch  :delta-time)
+              _     (gs/mutate :player push)
+              _     (gs/mutate :player physics delta)
+              _     (gs/mutate :player move delta)
+              _     (gs/mutate :player collide)
+             ]
+             nil))
 
-
-
-
-(defn player []
-  {:sprite {}})
-
+(defn render
+  [{[x y] :pos} batch]
+  (b/draw batch (:polka @gs/resources) x y size size))

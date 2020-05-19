@@ -7,6 +7,7 @@
                  [com.badlogicgames.gdx/gdx-backend-lwjgl "1.9.3"]
                  [com.badlogicgames.gdx/gdx-platform "1.9.3"
                   :classifier "natives-desktop"]
+                 [org.clojure/algo.monads "0.1.6"]
                  [org.clojure/clojure "1.10.0"]]
   :source-paths ["desktop/src" "src"]
   :aot [coinbox.desktop.launcher]

@@ -1,9 +1,8 @@
 (ns coinbox.screens
-  (:require [coinbox.gamestate :as gamestate :refer [resources]]
-            [coinbox.player :as player]
+  (:require [coinbox.gamestate :as gs]
             [coinbox.utils :as utils]
-            [coinbox.box :as box]
-            [coinbox.logic :as logic])
+            [coinbox.logic :as logic]
+            [coinbox.renderer :as r])
   (:import [com.badlogic.gdx Game Gdx Input Input$Keys Graphics Screen]
            [com.badlogic.gdx.graphics Color GL20]
            [com.badlogic.gdx.graphics.g2d SpriteBatch BitmapFont]
@@ -15,11 +14,17 @@
 
 (defn screen! [s] 
   (.postRunnable (Gdx/app)
-                #(.setScreen @gamestate/game s)))
+                #(.setScreen @gs/game s)))
+
+(defn run-state
+  "Runs the state and returns the new state"
+  [m s]
+  (second (m s)))
 
 (def main
   (let [stage (atom nil)
-        batch (atom nil)]
+        batch (atom nil)
+        fps-label (atom nil)]
     (proxy [Screen] []
       ;;; on switch to this screen
       (show []
@@ -29,13 +34,13 @@
         (reset! batch (SpriteBatch.))
 
         ;; init logical state
-        (reset! gamestate/state (-> (logic/init)
-                                    (logic/attach-batch @batch)))
+        (reset! gs/state (run-state (logic/init-state) {}))
 
         ;; add label
         (let [style (Label$LabelStyle. (BitmapFont.) (Color. 1 1 1 1))
               label (Label. "MAIN SCREEN" style)]
-          (.addActor @stage label)))
+          (.addActor @stage label)
+          (reset! fps-label label)))
 
       ;;; update and render to screen
       (render [delta]
@@ -49,20 +54,24 @@
           (screen! paused))
         (when (.isKeyJustPressed Gdx/input Input$Keys/R)
           ;; reload resources
-          (gamestate/load-resources))
+          (gs/load-resources))
 
         ;; start rendering
         (.begin @batch)
 
-        ;; update / render game
-        (as-> @gamestate/state state
-          ;; tick logic
-          (logic/tick state)
-          ;; update gamestate
-          (reset! gamestate/state state))
+        ;; tick logic
+        (let [new-state (run-state (logic/tick delta) @gs/state)] 
+          ;; render
+          ((r/render @batch) new-state)
+          ;; update gamestate 
+          (reset! gs/state new-state))
 
         ;; end rendering
         (.end @batch)
+
+        ;; update fps label
+        (.setText @fps-label (str (->> (/ 1.0 delta) 
+                                       (format "%.2f")) " fps"))
 
         ;; render stage
         (doto @stage
